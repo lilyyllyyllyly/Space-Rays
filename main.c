@@ -18,6 +18,7 @@
 
 // Player
 #define PLAYER_ACCEL 300.0
+#define PLAYER_DEACCEL 25.0
 #define PLAYER_VEL_CAP 400.0
 #define PLAYER_ROT_SPEED 5.0
 #define PLAYER_SIZE 15
@@ -46,8 +47,8 @@
 // Projectile
 #define PROJECTILE_RADIUS 2
 #define PROJECTILE_OFFSET 10
-#define PROJECTILE_VEL 400.0
-#define PROJECTILE_LIFETIME 0.6
+#define PROJECTILE_VEL 500.0
+#define PROJECTILE_LIFETIME 0.7
 
 // Object types
 #define TYPE_PLAYER     0
@@ -255,7 +256,10 @@ void Process() {
 
 	    // - Velocity
 	float accel = IsKeyDown(KEY_W) * PLAYER_ACCEL * deltaTime;
+
 	player->vel = Vector2Add(player->vel, Vector2Rotate((Vector2){0, -accel}, player->rot));
+	player->vel = Vector2Subtract(player->vel, Vector2Scale(Vector2Normalize(player->vel), PLAYER_DEACCEL * deltaTime));
+
 	player->vel = Vector2ClampValue(player->vel, 0, PLAYER_VEL_CAP);
 	  //
 
