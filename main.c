@@ -24,6 +24,8 @@
 #define PLAYER_SIZE 15
 #define PLAYER_SHOOT_DELAY 0.15
 #define PLAYER_HEALTH 3
+#define PLAYER_INVUL_SEC 0.5 // Time between hits
+#define PLAYER_KNOCKBACK 100 // Knockback from getting hit
 
 // Asteroid
 #define ASTEROID_COUNT_BASE 5
@@ -79,6 +81,7 @@ Node* objs_head = NULL;
 
 Object* player = NULL;
 clock_t lastShoot;
+clock_t lastHit;
 
 int level = 0;
 
@@ -111,6 +114,7 @@ void OneTimeInit() {
 	atexit(FreeObjects);
 
 	lastShoot = clock();
+	lastHit   = clock();
 
 	camera = (Camera2D){
 		.offset = (Vector2){WIDTH/2, HEIGHT/2},
@@ -188,7 +192,7 @@ void CreateAsteroid(Vector2 position, int radius) {
 	asteroid->type = TYPE_ASTEROID;
 
 	// Health
-	asteroid->health = ASTEROID_MIN_HEALTH + ((float)(radius - ASTEROID_DESTROY_SIZE)/(ASTEROID_MAX_SIZE - ASTEROID_DESTROY_SIZE) * ASTEROID_MAX_HEALTH);
+	asteroid->health = ASTEROID_MIN_HEALTH + ASTEROID_MAX_HEALTH * Normalize(radius, ASTEROID_MIN_SIZE, ASTEROID_MAX_SIZE);
 
 	// Layer
 	asteroid->layer = LAYER_ASTEROID;
@@ -372,7 +376,16 @@ void Process() {
 			if (!CheckCollision(obj, otherObj)) continue; // The objects don't collide
 
 			if (obj->type == TYPE_PLAYER && otherObj->type == TYPE_ASTEROID) {
-				--obj->health;
+				// If player isn't invulnerable, damage player
+				if ((double)(currClock - lastHit)/CLOCKS_PER_SEC > PLAYER_INVUL_SEC) {
+					--obj->health;
+					lastHit = currClock;
+				}
+
+				// Knockback
+				Vector2 knockDir = Vector2Normalize(Vector2Subtract(player->pos, otherObj->pos));
+				player->vel = Vector2Scale(knockDir, PLAYER_KNOCKBACK);
+
 				break;
 			}
 
