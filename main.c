@@ -23,6 +23,7 @@
 #define PLAYER_ROT_SPEED 5.0
 #define PLAYER_SIZE 15
 #define PLAYER_SHOOT_DELAY 0.15
+#define PLAYER_HEALTH 3
 
 // Asteroid
 #define ASTEROID_COUNT_BASE 5
@@ -33,7 +34,6 @@
 
 #define ASTEROID_MIN_SIZE  40
 #define ASTEROID_MAX_SIZE 100
-
 #define ASTEROID_DESTROY_SIZE 20
 
 #define ASTEROID_MIN_VEL 150.0
@@ -44,14 +44,19 @@
 
 #define ASTEROID_ROT_SPEED 30.0
 
+#define ASTEROID_MAX_HEALTH 5
+#define ASTEROID_MIN_HEALTH 1
+
 // Projectile
 #define PROJECTILE_RADIUS 2
 #define PROJECTILE_OFFSET 10
 #define PROJECTILE_VEL 500.0
 #define PROJECTILE_LIFETIME 0.7
+#define PROJECTILE_HEALTH 1
 
 // Enemy Base
-#define BASE_RADIUS 8
+#define BASE_RADIUS 22
+#define BASE_HEALTH 5
 
 // Object types
 #define TYPE_PLAYER     0
@@ -140,12 +145,15 @@ void InitPlayer() {
 	// Type
 	player->type = TYPE_PLAYER;
 
+	// Health
+	player->health = PLAYER_HEALTH;
+
 	// Layer
 	player->layer = LAYER_PLAYER;
 	player->layerMask = LAYER_ASTEROID | LAYER_BASE;
 }
 
-void CreateAsteroid(Vector2 position, float radius) {
+void CreateAsteroid(Vector2 position, int radius) {
 	// Creating object and appending node to objects list
 	Node* astrNode = CreateObject();
 	InsertToList(astrNode, &objs_head);
@@ -179,6 +187,9 @@ void CreateAsteroid(Vector2 position, float radius) {
 	// Type
 	asteroid->type = TYPE_ASTEROID;
 
+	// Health
+	asteroid->health = ASTEROID_MIN_HEALTH + ((float)(radius - ASTEROID_DESTROY_SIZE)/(ASTEROID_MAX_SIZE - ASTEROID_DESTROY_SIZE) * ASTEROID_MAX_HEALTH);
+
 	// Layer
 	asteroid->layer = LAYER_ASTEROID;
 	asteroid->layerMask = 0; // Asteroid collisions are checked by the colliding objects
@@ -210,6 +221,9 @@ void CreateProjectile() {
 
 	// Type
 	proj->type = TYPE_PROJECTILE;
+
+	// Health
+	proj->health = PROJECTILE_HEALTH;
 
 	// Layer
 	proj->layer = LAYER_PROJECTILE;
@@ -246,6 +260,9 @@ void CreateEnemyBase() {
 
 	// Type
 	base->type = TYPE_BASE;
+
+	// Health
+	base->health = BASE_HEALTH;
 
 	// Layer
 	base->layer = LAYER_BASE;
@@ -346,15 +363,35 @@ void Process() {
 		}
 
 		// Collision
-		bool destroyed = false;
 		for (Node* other = objs_head; other != NULL; other = other->next) {
 			Object* otherObj = other->obj;
 
 			if (!(otherObj->layer & obj->layerMask)) continue; // Other object is not in the layer mask
 			if (Vector2Distance(obj->pos, otherObj->pos) > obj->radius + otherObj->radius) continue; // Other object is not in range
+			if (obj->type == TYPE_PROJECTILE && otherObj->type == TYPE_BASE) printf("%f - %d\n", Vector2Distance(obj->pos, otherObj->pos), obj->radius + otherObj->radius);
 			if (!CheckCollision(obj, otherObj)) continue; // The objects don't collide
 
 			if (obj->type == TYPE_PLAYER && otherObj->type == TYPE_ASTEROID) {
+				--obj->health;
+				break;
+			}
+
+			if (obj->type == TYPE_PROJECTILE && (otherObj->type == TYPE_ASTEROID || otherObj->type == TYPE_BASE)) {
+				--obj->health;
+				--otherObj->health;
+				break;
+			}
+		}
+
+		// Health
+		bool destroyed = false;
+		if (obj->health <= 0) { // Object died
+			if (obj->type == TYPE_ASTEROID && obj->radius/2 > ASTEROID_DESTROY_SIZE) {
+				// If it's an asteroid and it's big enough, create two more
+				CreateAsteroid(obj->pos, obj->radius/2);
+				CreateAsteroid(obj->pos, obj->radius/2);
+			} else if (obj->type == TYPE_PLAYER) {
+				// If it's the player, lose
 				puts("Lost! :(");
 				level = 0;
 				FreeObjects();
@@ -362,37 +399,11 @@ void Process() {
 				return;
 			}
 
-			if (obj->type == TYPE_PROJECTILE && otherObj->type == TYPE_ASTEROID) {
-				// Create two more asteroids (if its big enough)
-				if (otherObj->radius/2 > ASTEROID_DESTROY_SIZE) {
-					CreateAsteroid(otherObj->pos, otherObj->radius/2);
-					CreateAsteroid(otherObj->pos, otherObj->radius/2);
-				}
-				
-				// Destroy original asteroid
-				DestroyNode(other, &objs_head);
-
-				// Destroy projectile
-				Node* next = node->next;
-				DestroyNode(node, &objs_head);
-				node = next;
-
-				destroyed = true;
-				break;
-			}
-
-			if (obj->type == TYPE_PROJECTILE && otherObj->type == TYPE_BASE) {
-				// Destroy base
-				DestroyNode(other, &objs_head);
-
-				// Destroy Projectile
-				Node* next = node->next;
-				DestroyNode(node, &objs_head);
-				node = next;
-
-				destroyed = true;
-				break;
-			}
+			// Destroying
+			Node* next = node->next;
+			DestroyNode(node, &objs_head);
+			node = next;
+			destroyed = true;
 		}
 		//
 

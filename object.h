@@ -18,6 +18,9 @@ typedef struct {
 	
 	int type;
 
+	int health;
+	int maxHealth;
+
 	// Collision layers
 	char layer;
 	char layerMask;
