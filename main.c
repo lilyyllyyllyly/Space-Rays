@@ -50,10 +50,20 @@
 #define PROJECTILE_VEL 500.0
 #define PROJECTILE_LIFETIME 0.7
 
+// Enemy Base
+#define BASE_RADIUS 8
+
 // Object types
 #define TYPE_PLAYER     0
 #define TYPE_ASTEROID   1
 #define TYPE_PROJECTILE 2
+#define TYPE_BASE       3
+
+// Object layers
+#define LAYER_PLAYER     1<<0
+#define LAYER_ASTEROID   1<<1
+#define LAYER_PROJECTILE 1<<2
+#define LAYER_BASE       1<<3
 //
 
 #define NO_ASTEROID_RADIUS 130 // Radius around the player where asteroids can't spawn
@@ -66,6 +76,8 @@ Object* player = NULL;
 clock_t lastShoot;
 
 int level = 0;
+
+Camera2D camera;
 
 void OnInterrupt(int signal) {
 	puts("\nProgram terminated by SIGINT. Exiting.");
@@ -94,6 +106,13 @@ void OneTimeInit() {
 	atexit(FreeObjects);
 
 	lastShoot = clock();
+
+	camera = (Camera2D){
+		.offset = (Vector2){WIDTH/2, HEIGHT/2},
+		.target = (Vector2){0, 0},
+		.rotation = 0,
+		.zoom = 1,
+	};
 }
 
 void InitPlayer() {
@@ -120,6 +139,10 @@ void InitPlayer() {
 
 	// Type
 	player->type = TYPE_PLAYER;
+
+	// Layer
+	player->layer = LAYER_PLAYER;
+	player->layerMask = LAYER_ASTEROID | LAYER_BASE;
 }
 
 void CreateAsteroid(Vector2 position, float radius) {
@@ -155,6 +178,10 @@ void CreateAsteroid(Vector2 position, float radius) {
 
 	// Type
 	asteroid->type = TYPE_ASTEROID;
+
+	// Layer
+	asteroid->layer = LAYER_ASTEROID;
+	asteroid->layerMask = 0; // Asteroid collisions are checked by the colliding objects
 }
 
 void CreateProjectile() {
@@ -183,6 +210,46 @@ void CreateProjectile() {
 
 	// Type
 	proj->type = TYPE_PROJECTILE;
+
+	// Layer
+	proj->layer = LAYER_PROJECTILE;
+	proj->layerMask = LAYER_ASTEROID | LAYER_BASE;
+}
+
+void CreateEnemyBase() {
+	// Creating object and appending node to lists
+	Node* baseNode = CreateObject();
+	InsertToList(baseNode, &objs_head);
+
+	Object* base = baseNode->obj;
+
+	// Transform
+	base->pos = (Vector2){WIDTH/4, HEIGHT/4};
+	base->vel = (Vector2){0, 0};
+	base->rot = 0;
+	base->spin = 0;
+
+	// Radius
+	base->radius = BASE_RADIUS;
+
+	// Vertices
+	base->vertCount = 4;
+	base->vertices = malloc(base->vertCount*sizeof(Vector2));
+	base->transVerts = malloc(base->vertCount*sizeof(Vector2));
+	base->vertices[0] = (Vector2){-15,-15};
+	base->vertices[1] = (Vector2){-15, 15};
+	base->vertices[2] = (Vector2){ 15, 15};
+	base->vertices[3] = (Vector2){ 15,-15};
+
+	// Lifetime
+	base->lifetime = NO_LIFETIME;
+
+	// Type
+	base->type = TYPE_BASE;
+
+	// Layer
+	base->layer = LAYER_BASE;
+	base->layerMask = 0; // Enemy base collisions are checked by the colliding objects
 }
 
 void Initialize() {
@@ -208,39 +275,20 @@ void Initialize() {
 			 position.x - radius < player->pos.x + NO_ASTEROID_RADIUS &&
 			 position.y + radius > player->pos.y - NO_ASTEROID_RADIUS &&
 			 position.y - radius < player->pos.y + NO_ASTEROID_RADIUS); // Checking if it is inside the no asteroid radius around player
-												   //
+
 		CreateAsteroid(position, radius);
 	}
+
+	// Creating enemy bases
+	CreateEnemyBase();
 }
 
-bool AsteroidPlayerCollision(Object* astr) {
-	if (Vector2Distance(astr->pos, player->pos) > astr->radius + player->radius) return false; // Not in range
-
-	// Checking if one of the player's vertices collides with the asteroid
-	for (int i = 0; i < player->vertCount; ++i) {
-		if (CheckCollisionPointPoly(player->transVerts[i], astr->transVerts, astr->vertCount)) {
-			return true;
-		}
-	}
-
-	return false;
-}
-
-bool AsteroidProjectileCollision(Object* astr, Node** projNode) {
-	// Going through each projectile to check for collision
-	*projNode = objs_head;
-	while (*projNode != NULL) {
-		Object* proj = (*projNode)->obj;
-		if (proj->type != TYPE_PROJECTILE) goto next; // Not an projectile
-
-		if (Vector2Distance(astr->pos, proj->pos) > astr->radius) goto next; // Not in range
-
-		if (CheckCollisionPointPoly(proj->pos, astr->transVerts, astr->vertCount)) {
-			return true;
-		}
-		
-next:
-		*projNode = (*projNode)->next;
+bool CheckCollision(Object* this, Object* other) {
+	Object* obj = this->vertCount < other->vertCount? this : other; // We will iterate through the vertices of the object with least vertices
+	Object* poly = obj == this? other : this; // We will use the the object with more vertices as the polygon in the collision check
+	
+	for (int i = 0; i < obj->vertCount; ++i) {
+		if (CheckCollisionPointPoly(obj->transVerts[i], poly->transVerts, poly->vertCount)) return true;
 	}
 
 	return false;
@@ -277,19 +325,12 @@ void Process() {
 	Node* node = objs_head;
 	while (node != NULL) {
 		Object* obj = node->obj;
-		if (obj->type == TYPE_ASTEROID) won = false;
+		if (obj->type == TYPE_BASE) won = false;
 
 		// Applying movement
 		  // - Moving and rotating
 		obj->rot += obj->spin * deltaTime;
 		obj->pos = Vector2Add(obj->pos, Vector2Scale(obj->vel, deltaTime));
-
-		  // - Wrapping
-		if (obj->pos.x - obj->radius > WIDTH)  obj->pos.x -= WIDTH  + obj->radius*2;
-		if (obj->pos.x + obj->radius < 0)      obj->pos.x += WIDTH  + obj->radius*2;
-		if (obj->pos.y - obj->radius > HEIGHT) obj->pos.y -= HEIGHT + obj->radius*2;
-		if (obj->pos.y + obj->radius < 0)      obj->pos.y += HEIGHT + obj->radius*2;
-		//
 
 		// Getting transformed vertices
 		for (int i = 0; i < obj->vertCount; ++i) {
@@ -305,43 +346,63 @@ void Process() {
 		}
 
 		// Collision
-		if (obj->type != TYPE_ASTEROID) goto next; // We only care about asteroid collisions
+		bool destroyed = false;
+		for (Node* other = objs_head; other != NULL; other = other->next) {
+			Object* otherObj = other->obj;
 
-		  // - Player x Asteroid
-		if (AsteroidPlayerCollision(obj)) {
-			// Restart
-			puts("Lost! :(");
-			level = 0;
-			FreeObjects();
-			Initialize();
-			return;
-		}
+			if (!(otherObj->layer & obj->layerMask)) continue; // Other object is not in the layer mask
+			if (Vector2Distance(obj->pos, otherObj->pos) > obj->radius + otherObj->radius) continue; // Other object is not in range
+			if (!CheckCollision(obj, otherObj)) continue; // The objects don't collide
 
-		  // - Projectile x Asteroid
-		Node* proj = NULL;
-		if (AsteroidProjectileCollision(obj, &proj)) {
-			// Destroy projectile
-			DestroyNode(proj, &objs_head);
-
-			// Create two more asteroids
-			if (obj->radius/2 > ASTEROID_DESTROY_SIZE) {
-				CreateAsteroid(obj->pos, obj->radius/2);
-				CreateAsteroid(obj->pos, obj->radius/2);
+			if (obj->type == TYPE_PLAYER && otherObj->type == TYPE_ASTEROID) {
+				puts("Lost! :(");
+				level = 0;
+				FreeObjects();
+				Initialize();
+				return;
 			}
-			
-			// Destroy original asteroid
-			Node* next = node->next;
-			DestroyNode(node, &objs_head);
-			node = next;
-			continue;
+
+			if (obj->type == TYPE_PROJECTILE && otherObj->type == TYPE_ASTEROID) {
+				// Create two more asteroids (if its big enough)
+				if (otherObj->radius/2 > ASTEROID_DESTROY_SIZE) {
+					CreateAsteroid(otherObj->pos, otherObj->radius/2);
+					CreateAsteroid(otherObj->pos, otherObj->radius/2);
+				}
+				
+				// Destroy original asteroid
+				DestroyNode(other, &objs_head);
+
+				// Destroy projectile
+				Node* next = node->next;
+				DestroyNode(node, &objs_head);
+				node = next;
+
+				destroyed = true;
+				break;
+			}
+
+			if (obj->type == TYPE_PROJECTILE && otherObj->type == TYPE_BASE) {
+				// Destroy base
+				DestroyNode(other, &objs_head);
+
+				// Destroy Projectile
+				Node* next = node->next;
+				DestroyNode(node, &objs_head);
+				node = next;
+
+				destroyed = true;
+				break;
+			}
 		}
 		//
 
-next:
-		node = node->next;
+		if (!destroyed) node = node->next;
 	}
 
-	// Going to next level when there are no more asteroids
+	// Move camera
+	camera.target = player->pos;
+
+	// Going to next level when there are no more enemy bases
 	if (!won) return;
 	++level;
 	Initialize();
@@ -350,6 +411,7 @@ next:
 void Draw() {
 	BeginDrawing();
 	ClearBackground(BLACK);
+	BeginMode2D(camera);
 
 	Node* node = objs_head;
 	while (node != NULL) {
@@ -357,6 +419,7 @@ void Draw() {
 		node = node->next;
 	}
 
+	EndMode2D();
 	EndDrawing();
 }
 

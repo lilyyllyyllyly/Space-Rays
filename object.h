@@ -17,6 +17,10 @@ typedef struct {
 	float lifetime; // Time in seconds for object to be destroyed, NO_LIFETIME means it won't be
 	
 	int type;
+
+	// Collision layers
+	char layer;
+	char layerMask;
 } Object;
 
 struct List;
@@ -30,7 +34,7 @@ typedef struct Node {
 
 void FreeNode(Node* node);
 
-// Unlinks nodes from list starting at Node head and then frees
+// Unlinks Node node from list starting at Node head and then frees
 void DestroyNode(Node* node, Node** head);
 
 // adds the Node node to the start of the list starting at head

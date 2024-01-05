@@ -10,7 +10,7 @@ void FreeNode(Node* node) {
 	free(node);
 }
 
-// Unlinks nodes from list starting at Node head and then frees
+// Unlinks Node node from list starting at Node head and then frees
 void DestroyNode(Node* node, Node** head) {
 	// Unlinking node
 	if (node->next) node->next->prev = node->prev;
