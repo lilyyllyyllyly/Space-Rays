@@ -1,6 +1,6 @@
 COMP=clang
 OPTIONS=-Wall -Wextra -Werror -Wno-unused-parameter
-OPTIONS_WEB=-I$(RAYLIB_SRC) -L$(RAYLIB_SRC) -sUSE_GLFW=3 -sGL_ENABLE_GET_PROC_ADDRESS -DPLATFORM_WEB
+OPTIONS_WEB=-I$(RAYLIB_SRC) -L$(RAYLIB_SRC) -sUSE_GLFW=3 -sGL_ENABLE_GET_PROC_ADDRESS -DPLATFORM_WEB --shell-file shell.html
 DEBUG=-fsanitize=address,undefined -g3
 LIBS=-lraylib
 
