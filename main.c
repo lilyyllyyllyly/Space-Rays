@@ -155,6 +155,9 @@ void InitPlayer() {
 	// Layer
 	player->layer = LAYER_PLAYER;
 	player->layerMask = LAYER_ASTEROID | LAYER_BASE;
+
+	// Color
+	player->color = WHITE;
 }
 
 void CreateAsteroid(Vector2 position, int radius) {
@@ -197,6 +200,9 @@ void CreateAsteroid(Vector2 position, int radius) {
 	// Layer
 	asteroid->layer = LAYER_ASTEROID;
 	asteroid->layerMask = 0; // Asteroid collisions are checked by the colliding objects
+
+	// Color
+	asteroid->color = WHITE;
 }
 
 void CreateProjectile() {
@@ -232,6 +238,9 @@ void CreateProjectile() {
 	// Layer
 	proj->layer = LAYER_PROJECTILE;
 	proj->layerMask = LAYER_ASTEROID | LAYER_BASE;
+
+	// Color
+	proj->color = WHITE;
 }
 
 void CreateEnemyBase() {
@@ -271,6 +280,9 @@ void CreateEnemyBase() {
 	// Layer
 	base->layer = LAYER_BASE;
 	base->layerMask = 0; // Enemy base collisions are checked by the colliding objects
+
+	// Color
+	base->color = RED;
 }
 
 void Initialize() {
@@ -338,6 +350,10 @@ void Process() {
 		CreateProjectile();
 		lastShoot = currClock;
 	}
+
+	  // - Invulnerability indicator
+	bool invul = (double)(currClock - lastHit)/CLOCKS_PER_SEC <= PLAYER_INVUL_SEC; // will be used later when checking hit
+	player->color = invul? GRAY : WHITE;
 	//
 
 	// Going through all objects
@@ -349,7 +365,6 @@ void Process() {
 		if (obj->type == TYPE_BASE) won = false;
 
 		// Applying movement
-		  // - Moving and rotating
 		obj->rot += obj->spin * deltaTime;
 		obj->pos = Vector2Add(obj->pos, Vector2Scale(obj->vel, deltaTime));
 
@@ -375,9 +390,9 @@ void Process() {
 			if (obj->type == TYPE_PROJECTILE && otherObj->type == TYPE_BASE) printf("%f - %d\n", Vector2Distance(obj->pos, otherObj->pos), obj->radius + otherObj->radius);
 			if (!CheckCollision(obj, otherObj)) continue; // The objects don't collide
 
-			if (obj->type == TYPE_PLAYER && otherObj->type == TYPE_ASTEROID) {
+			if (obj->type == TYPE_PLAYER && (otherObj->type == TYPE_ASTEROID || otherObj->type == TYPE_BASE)) {
 				// If player isn't invulnerable, damage player
-				if ((double)(currClock - lastHit)/CLOCKS_PER_SEC > PLAYER_INVUL_SEC) {
+				if (!invul) {
 					--obj->health;
 					lastHit = currClock;
 				}

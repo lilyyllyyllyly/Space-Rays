@@ -45,18 +45,18 @@ Node* CreateObject() {
 void DrawObject(Object obj) {
 	// Draw point (if only one vertex)
 	if (obj.vertCount == 1) {
-		DrawCircleV(obj.transVerts[0], obj.radius, WHITE);
+		DrawCircleV(obj.transVerts[0], obj.radius, obj.color);
 		return;
 	}
 
 	// Drawing lines (multiple vertices)
 	for (int i = 0; i < obj.vertCount; ++i) {
 		if (i == 0) {
-			DrawLineV(obj.transVerts[obj.vertCount-1], obj.transVerts[i], WHITE);
+			DrawLineV(obj.transVerts[obj.vertCount-1], obj.transVerts[i], obj.color);
 			continue;
 		}
 
-		DrawLineV(obj.transVerts[i], obj.transVerts[i-1], WHITE);
+		DrawLineV(obj.transVerts[i], obj.transVerts[i-1], obj.color);
 	}
 }
 

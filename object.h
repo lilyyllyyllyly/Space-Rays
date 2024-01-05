@@ -1,6 +1,8 @@
 #ifndef OBJECT_H
 #define OBJECT_H
 
+#include <raylib.h>
+
 typedef struct {
 	Vector2 pos;
 	Vector2 vel;
@@ -24,6 +26,8 @@ typedef struct {
 	// Collision layers
 	char layer;
 	char layerMask;
+
+	struct Color color;
 } Object;
 
 struct List;
