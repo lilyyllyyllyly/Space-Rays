@@ -16,6 +16,10 @@
 #define WIDTH  800
 #define HEIGHT 600
 
+// Playable area
+#define AREA_W 4000
+#define AREA_H 4000
+
 // Player
 #define PLAYER_ACCEL 300.0
 #define PLAYER_DEACCEL 25.0
@@ -28,8 +32,8 @@
 #define PLAYER_KNOCKBACK 100 // Knockback from getting hit
 
 // Asteroid
-#define ASTEROID_COUNT_BASE 5
-#define ASTEROID_COUNT_INCR 2 // increment
+#define ASTEROID_COUNT_BASE 15
+#define ASTEROID_COUNT_INCR 5 // increment
 
 #define ASTEROID_MIN_VERTS  7
 #define ASTEROID_MAX_VERTS 12
@@ -71,6 +75,11 @@
 #define LAYER_ASTEROID   1<<1
 #define LAYER_PROJECTILE 1<<2
 #define LAYER_BASE       1<<3
+
+// Enemy base indicator arrows
+#define ARROW_W 10
+#define ARROW_H 20
+#define ARROW_DIST 45 // Distance to the player
 //
 
 #define NO_ASTEROID_RADIUS 130 // Radius around the player where asteroids can't spawn
@@ -86,6 +95,8 @@ clock_t lastHit;
 int level = 0;
 
 Camera2D camera;
+
+Vector2* basesPos = NULL; // Positions of the bases
 
 void OnInterrupt(int signal) {
 	puts("\nProgram terminated by SIGINT. Exiting.");
@@ -104,6 +115,10 @@ void FreeObjects() {
 	player = NULL;
 }
 
+void FreeBasesPos() {
+	if (basesPos) free(basesPos);
+}
+
 void OneTimeInit() {
 	signal(SIGINT, OnInterrupt);
 
@@ -112,6 +127,7 @@ void OneTimeInit() {
 	atexit(CloseWindow);
 
 	atexit(FreeObjects);
+	atexit(FreeBasesPos);
 
 	lastShoot = clock();
 	lastHit   = clock();
@@ -250,14 +266,23 @@ void CreateEnemyBase() {
 
 	Object* base = baseNode->obj;
 
+	// Radius
+	base->radius = BASE_RADIUS;
+
+	// Randomizing position
+	Vector2 position;
+	do {
+		position = (Vector2){GetRandomValue(0, AREA_W), GetRandomValue(0, AREA_H)};
+	} while (position.x + base->radius > player->pos.x - base->radius &&
+		 position.x - base->radius < player->pos.x + base->radius &&
+		 position.y + base->radius > player->pos.y - base->radius &&
+		 position.y - base->radius < player->pos.y + base->radius); // Checking if it overlaps with the player
+
 	// Transform
-	base->pos = (Vector2){WIDTH/4, HEIGHT/4};
+	base->pos = position;
 	base->vel = (Vector2){0, 0};
 	base->rot = 0;
 	base->spin = 0;
-
-	// Radius
-	base->radius = BASE_RADIUS;
 
 	// Vertices
 	base->vertCount = 4;
@@ -303,7 +328,7 @@ void Initialize() {
 		// Randomizing position
 		Vector2 position;
 		do {
-			position = (Vector2){GetRandomValue(0, WIDTH), GetRandomValue(0, HEIGHT)};
+			position = (Vector2){GetRandomValue(0, AREA_W), GetRandomValue(0, AREA_H)};
 		} while (position.x + radius > player->pos.x - NO_ASTEROID_RADIUS &&
 			 position.x - radius < player->pos.x + NO_ASTEROID_RADIUS &&
 			 position.y + radius > player->pos.y - NO_ASTEROID_RADIUS &&
@@ -313,7 +338,13 @@ void Initialize() {
 	}
 
 	// Creating enemy bases
-	CreateEnemyBase();
+	int basesCount = level+1;
+	for (int i = 0; i < basesCount; ++i) {
+		CreateEnemyBase();
+	}
+
+	FreeBasesPos();
+	basesPos = malloc(basesCount * sizeof(Vector2));
 }
 
 bool CheckCollision(Object* this, Object* other) {
@@ -452,11 +483,31 @@ void Draw() {
 	ClearBackground(BLACK);
 	BeginMode2D(camera);
 
+	int baseCount = 0;
+
+	// Drawing objects and storing base positions
 	Node* node = objs_head;
 	while (node != NULL) {
+		if (node->obj->type == TYPE_BASE) basesPos[baseCount++] = node->obj->pos; // Storing base pos
 		DrawObject(*(node->obj));
 		node = node->next;
 	}
+
+	// Drawing arrows to indicate enemy base positions
+	for (int i = 0; i < baseCount; ++i) {
+		Vector2 header = Vector2Normalize(Vector2Subtract(basesPos[i], player->pos));
+		float angle = Vector2Angle((Vector2){0, -1}, header);
+		Vector2 position = Vector2Add(player->pos, Vector2Scale(header, ARROW_DIST));
+
+		Vector2 vertices[3] = {
+			Vector2Add(position, Vector2Rotate((Vector2){-ARROW_W, 0}, angle)),
+			Vector2Add(position, Vector2Rotate((Vector2){ ARROW_W, 0}, angle)),
+			Vector2Add(position, Vector2Rotate((Vector2){0, -ARROW_H}, angle)),
+		};
+
+		DrawTriangleLines(vertices[0], vertices[1], vertices[2], RED);
+	}
+	//
 
 	EndMode2D();
 	EndDrawing();
