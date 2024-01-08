@@ -57,30 +57,35 @@
 // Projectile
 #define PROJECTILE_RADIUS 2
 #define PROJECTILE_OFFSET 10
-#define PROJECTILE_VEL 500.0
-#define PROJECTILE_LIFETIME 0.7
+#define PROJECTILE_VEL 800.0
+#define PROJECTILE_LIFETIME 0.35
+#define ENEMY_PROJ_VEL 200.0
+#define ENEMY_PROJ_LIFETIME 2.0
 #define PROJECTILE_HEALTH 1
 
 // Enemy Base
-#define BASE_RADIUS 22
-#define BASE_HEALTH 5
+#define BASE_RADIUS 35
+#define BASE_SIDES 8
+#define BASE_HEALTH 20
+#define BASE_SHOOT_DELAY 2.0 // in seconds
 
 // Object types
 #define TYPE_PLAYER     0
 #define TYPE_ASTEROID   1
 #define TYPE_PROJECTILE 2
-#define TYPE_BASE       3
+#define TYPE_ENEMY_PROJ 3
+#define TYPE_BASE       4
 
 // Object layers
 #define LAYER_PLAYER     1<<0
 #define LAYER_ASTEROID   1<<1
 #define LAYER_PROJECTILE 1<<2
-#define LAYER_BASE       1<<3
+#define LAYER_ENEMY_PROJ 1<<3
+#define LAYER_BASE       1<<4
 
 // Enemy base indicator arrows
-#define ARROW_W 10
-#define ARROW_H 20
-#define ARROW_DIST 45 // Distance to the player
+#define ARROW_MAX_RADIUS 10
+#define ARROW_DISTANCE   45 // Distance to the player
 //
 
 #define NO_ASTEROID_RADIUS 130 // Radius around the player where asteroids can't spawn
@@ -101,6 +106,8 @@ Camera2D camera;
 Vector2* basesPos = NULL; // Positions of the bases
 
 Texture2D starsTex;
+
+clock_t lastBaseShoot;
 
 void OnInterrupt(int signal) {
 	puts("\nProgram terminated by SIGINT. Exiting.");
@@ -171,6 +178,7 @@ void OneTimeInit() {
 	// Variables
 	lastShoot = clock();
 	lastHit   = clock();
+	lastBaseShoot = clock();
 
 	camera = (Camera2D){
 		.offset = (Vector2){WIDTH/2, HEIGHT/2},
@@ -188,16 +196,17 @@ void InitPlayer() {
 	player->pos = (Vector2){AREA_W/2, AREA_H/2};
 	player->rot = 0;
 
-	// Vertices
-	player->vertCount = 3;
-	player->vertices = malloc(player->vertCount * sizeof(Vector2));
-	player->transVerts = malloc(player->vertCount * sizeof(Vector2));
-	player->vertices[0] = (Vector2){           0, -PLAYER_SIZE};
-	player->vertices[1] = (Vector2){ PLAYER_SIZE,  PLAYER_SIZE};
-	player->vertices[2] = (Vector2){-PLAYER_SIZE,  PLAYER_SIZE};
-
 	// Radius
 	player->radius = PLAYER_RADIUS;
+
+	// Vertices
+	player->vertCount = 3;
+	player->vertices   = malloc(player->vertCount * sizeof(Vector2));
+	player->transVerts = malloc(player->vertCount * sizeof(Vector2));
+
+	player->vertices[0] = (Vector2){           0, -PLAYER_SIZE},
+	player->vertices[1] = (Vector2){ PLAYER_SIZE,  PLAYER_SIZE},
+	player->vertices[2] = (Vector2){-PLAYER_SIZE,  PLAYER_SIZE},
 
 	// Lifetime
 	player->lifetime = NO_LIFETIME;
@@ -206,11 +215,12 @@ void InitPlayer() {
 	player->type = TYPE_PLAYER;
 
 	// Health
+	player->maxHealth = PLAYER_HEALTH;
 	player->health = PLAYER_HEALTH;
 
 	// Layer
 	player->layer = LAYER_PLAYER;
-	player->layerMask = LAYER_ASTEROID | LAYER_BASE;
+	player->layerMask = LAYER_ASTEROID | LAYER_BASE | LAYER_ENEMY_PROJ;
 
 	// Color
 	player->color = WHITE;
@@ -251,7 +261,8 @@ void CreateAsteroid(Vector2 position, int radius) {
 	asteroid->type = TYPE_ASTEROID;
 
 	// Health
-	asteroid->health = ASTEROID_MIN_HEALTH + ASTEROID_MAX_HEALTH * Normalize(radius, ASTEROID_MIN_SIZE, ASTEROID_MAX_SIZE);
+	asteroid->maxHealth = ASTEROID_MIN_HEALTH + ASTEROID_MAX_HEALTH * Normalize(radius, ASTEROID_DESTROY_SIZE, ASTEROID_MAX_SIZE);
+	asteroid->health = asteroid->maxHealth;
 
 	// Layer
 	asteroid->layer = LAYER_ASTEROID;
@@ -261,7 +272,7 @@ void CreateAsteroid(Vector2 position, int radius) {
 	asteroid->color = WHITE;
 }
 
-void CreateProjectile() {
+void CreateProjectile(int type, Vector2 pos) {
 	// Creating object and appending node to lists
 	Node* projNode = CreateObject();
 	InsertToList(projNode, &objs_head);
@@ -269,9 +280,10 @@ void CreateProjectile() {
 	Object* proj = projNode->obj;
 	
 	// Transform
-	proj->pos = Vector2Add(player->pos, Vector2Rotate((Vector2){0, -PROJECTILE_OFFSET}, player->rot));
-	proj->rot = player->rot;
-	proj->vel = Vector2Rotate((Vector2){0, -PROJECTILE_VEL}, proj->rot);
+	proj->pos = pos;
+	proj->rot = type == TYPE_PROJECTILE? player->rot : Vector2Angle((Vector2){0, -1}, Vector2Subtract(player->pos, pos));
+	float projVel = type == TYPE_PROJECTILE? PROJECTILE_VEL : ENEMY_PROJ_VEL;
+	proj->vel = Vector2Rotate((Vector2){0, -projVel}, proj->rot);
 
 	// Radius
 	proj->radius = PROJECTILE_RADIUS;
@@ -283,20 +295,31 @@ void CreateProjectile() {
 	proj->vertices[0] = (Vector2){0, 0};
 
 	// Lifetime
-	proj->lifetime = PROJECTILE_LIFETIME;
+	proj->lifetime = type == TYPE_PROJECTILE? PROJECTILE_LIFETIME : ENEMY_PROJ_LIFETIME;
 
 	// Type
-	proj->type = TYPE_PROJECTILE;
+	proj->type = type;
 
 	// Health
+	proj->maxHealth = PROJECTILE_HEALTH;
 	proj->health = PROJECTILE_HEALTH;
 
 	// Layer
-	proj->layer = LAYER_PROJECTILE;
-	proj->layerMask = LAYER_ASTEROID | LAYER_BASE;
+	proj->layer = type == TYPE_PROJECTILE? LAYER_PROJECTILE : LAYER_ENEMY_PROJ;
+	proj->layerMask = type == TYPE_PROJECTILE? LAYER_ASTEROID | LAYER_BASE : 0;
 
 	// Color
-	proj->color = WHITE;
+	proj->color = type == TYPE_PROJECTILE? WHITE : RED;
+}
+
+Vector2* RegularPolygon(int vertCount, int radius) {
+	Vector2* vertices = malloc(vertCount * sizeof(Vector2));
+	for (int i = 0; i < vertCount; ++i) {
+		int dist = radius;
+		float angle = (i*360/vertCount)*DEG2RAD;
+		vertices[i] = Vector2Rotate((Vector2){0, -dist}, angle);
+	}
+	return vertices;
 }
 
 void CreateEnemyBase() {
@@ -325,13 +348,9 @@ void CreateEnemyBase() {
 	base->spin = 0;
 
 	// Vertices
-	base->vertCount = 4;
-	base->vertices = malloc(base->vertCount*sizeof(Vector2));
+	base->vertCount = BASE_SIDES;
+	base->vertices = RegularPolygon(base->vertCount, base->radius);
 	base->transVerts = malloc(base->vertCount*sizeof(Vector2));
-	base->vertices[0] = (Vector2){-15,-15};
-	base->vertices[1] = (Vector2){-15, 15};
-	base->vertices[2] = (Vector2){ 15, 15};
-	base->vertices[3] = (Vector2){ 15,-15};
 
 	// Lifetime
 	base->lifetime = NO_LIFETIME;
@@ -340,6 +359,7 @@ void CreateEnemyBase() {
 	base->type = TYPE_BASE;
 
 	// Health
+	base->maxHealth = BASE_HEALTH;
 	base->health = BASE_HEALTH;
 
 	// Layer
@@ -400,6 +420,7 @@ bool CheckCollision(Object* this, Object* other) {
 
 void Process() {
 	float deltaTime = GetFrameTime();
+	clock_t currClock = clock();
 
 	// Player
 	  // - Movement
@@ -416,9 +437,8 @@ void Process() {
 	  //
 
 	  // - Shooting
-	clock_t currClock = clock();
 	if ((double)(currClock - lastShoot)/CLOCKS_PER_SEC > PLAYER_SHOOT_DELAY && IsKeyDown(KEY_SPACE)) {
-		CreateProjectile();
+		CreateProjectile(TYPE_PROJECTILE, Vector2Add(player->pos, Vector2Rotate((Vector2){0, -PROJECTILE_OFFSET}, player->rot)));
 		lastShoot = currClock;
 	}
 
@@ -429,11 +449,20 @@ void Process() {
 
 	// Going through all objects
 	bool won = true;
+	bool baseShot = false;
 
 	Node* node = objs_head;
 	while (node != NULL) {
 		Object* obj = node->obj;
-		if (obj->type == TYPE_BASE) won = false;
+
+		// Enemy base shooting
+		if (obj->type == TYPE_BASE) {
+			won = false;
+			if ((double)(currClock - lastBaseShoot)/CLOCKS_PER_SEC > BASE_SHOOT_DELAY) {
+				CreateProjectile(TYPE_ENEMY_PROJ, obj->pos);
+				baseShot = true;
+			}
+		}
 
 		// Applying movement
 		obj->rot += obj->spin * deltaTime;
@@ -466,7 +495,7 @@ void Process() {
 			if (Vector2Distance(obj->pos, otherObj->pos) > obj->radius + otherObj->radius) continue; // Other object is not in range
 			if (!CheckCollision(obj, otherObj)) continue; // The objects don't collide
 
-			if (obj->type == TYPE_PLAYER && (otherObj->type == TYPE_ASTEROID || otherObj->type == TYPE_BASE)) {
+			if (obj->type == TYPE_PLAYER && (otherObj->type == TYPE_ASTEROID || otherObj->type == TYPE_BASE || otherObj->type == TYPE_ENEMY_PROJ)) {
 				// If player isn't invulnerable, damage player
 				if (!invul) {
 					--obj->health;
@@ -514,6 +543,10 @@ void Process() {
 		if (!destroyed) node = node->next;
 	}
 
+	if (baseShot) {
+		lastBaseShoot = currClock;
+	}
+
 	// Move camera
 	Vector2 newTarget;
 	newTarget.x = Clamp(player->pos.x, WIDTH /2, AREA_W-(WIDTH /2));
@@ -528,35 +561,47 @@ void Process() {
 
 void Draw() {
 	BeginDrawing();
-	ClearBackground(BLACK);
-	BeginMode2D(camera);
 
 	// Drawing stars
+	BeginMode2D(camera);
 	DrawTexture(starsTex, 0, 0, LIGHTGRAY);
-
-	// Drawing objects and storing base positions
+	EndMode2D();
+	
+	BeginMode2D(camera);
 	int baseCount = 0;
 	Node* node = objs_head;
 	while (node != NULL) {
-		if (node->obj->type == TYPE_BASE) basesPos[baseCount++] = node->obj->pos; // Storing base pos
+		Object* obj = node->obj;
 
-		DrawObject(*(node->obj));
+		// Drawing objects
+		DrawObject(*obj);
+
+		// Storing base positions
+		if (obj->type == TYPE_BASE) basesPos[baseCount++] = obj->pos;
+
 		node = node->next;
 	}
 
 	// Drawing arrows to indicate enemy base positions
 	for (int i = 0; i < baseCount; ++i) {
-		Vector2 header = Vector2Normalize(Vector2Subtract(basesPos[i], player->pos));
+		Vector2 diff = Vector2Subtract(basesPos[i], player->pos);
+
+		Vector2 header = Vector2Normalize(diff);
 		float angle = Vector2Angle((Vector2){0, -1}, header);
-		Vector2 position = Vector2Add(player->pos, Vector2Scale(header, ARROW_DIST));
+		Vector2 position = Vector2Add(player->pos, Vector2Scale(header, ARROW_DISTANCE));
 
-		Vector2 vertices[3] = {
-			Vector2Add(position, Vector2Rotate((Vector2){-ARROW_W, 0}, angle)),
-			Vector2Add(position, Vector2Rotate((Vector2){ ARROW_W, 0}, angle)),
-			Vector2Add(position, Vector2Rotate((Vector2){0, -ARROW_H}, angle)),
-		};
+		int vertCount = 3;
+		Vector2* vertices = RegularPolygon(vertCount, ARROW_MAX_RADIUS);
+		Vector2* transVerts = malloc(vertCount * sizeof(Vector2));
 
-		DrawTriangleLines(vertices[0], vertices[1], vertices[2], RED);
+		for (int i = 0; i < vertCount; ++i) {
+			transVerts[i] = Vector2Add(position, Vector2Rotate(vertices[i], angle));
+		}
+
+		DrawTriangleLines(transVerts[0], transVerts[1], transVerts[2], RED);
+
+		free(vertices);
+		free(transVerts);
 	}
 	//
 

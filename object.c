@@ -6,6 +6,7 @@
 
 void FreeNode(Node* node) {
 	free(node->obj->vertices);
+	free(node->obj->transVerts);
 	free(node->obj);
 	free(node);
 }
