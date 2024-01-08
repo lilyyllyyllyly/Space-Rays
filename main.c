@@ -21,11 +21,12 @@
 #define AREA_H 4000
 
 // Player
-#define PLAYER_ACCEL 300.0
-#define PLAYER_DEACCEL 25.0
-#define PLAYER_VEL_CAP 400.0
-#define PLAYER_ROT_SPEED 5.0
-#define PLAYER_SIZE 15
+#define PLAYER_ACCEL 600.0
+#define PLAYER_DEACCEL 300.0
+#define PLAYER_VEL_CAP 600.0
+#define PLAYER_ROT_SPEED 3.5
+#define PLAYER_RADIUS 15 // Radius for collision checking
+#define PLAYER_SIZE    7 // Actual size of the triangle
 #define PLAYER_SHOOT_DELAY 0.15
 #define PLAYER_HEALTH 3
 #define PLAYER_INVUL_SEC 0.5 // Time between hits
@@ -191,12 +192,12 @@ void InitPlayer() {
 	player->vertCount = 3;
 	player->vertices = malloc(player->vertCount * sizeof(Vector2));
 	player->transVerts = malloc(player->vertCount * sizeof(Vector2));
-	player->vertices[0] = (Vector2){  0, -10};
-	player->vertices[1] = (Vector2){ 10,  10};
-	player->vertices[2] = (Vector2){-10,  10};
+	player->vertices[0] = (Vector2){           0, -PLAYER_SIZE};
+	player->vertices[1] = (Vector2){ PLAYER_SIZE,  PLAYER_SIZE};
+	player->vertices[2] = (Vector2){-PLAYER_SIZE,  PLAYER_SIZE};
 
 	// Radius
-	player->radius = PLAYER_SIZE;
+	player->radius = PLAYER_RADIUS;
 
 	// Lifetime
 	player->lifetime = NO_LIFETIME;
@@ -406,7 +407,7 @@ void Process() {
 	player->spin = (IsKeyDown(KEY_D) - IsKeyDown(KEY_A)) * PLAYER_ROT_SPEED;
 
 	    // - Velocity
-	float accel = IsKeyDown(KEY_W) * PLAYER_ACCEL * deltaTime;
+	float accel = (IsKeyDown(KEY_W) - IsKeyDown(KEY_S)) * PLAYER_ACCEL * deltaTime;
 
 	player->vel = Vector2Add(player->vel, Vector2Rotate((Vector2){0, -accel}, player->rot));
 	player->vel = Vector2Subtract(player->vel, Vector2Scale(Vector2Normalize(player->vel), PLAYER_DEACCEL * deltaTime));
