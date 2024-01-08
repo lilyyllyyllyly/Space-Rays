@@ -28,7 +28,8 @@
 #define PLAYER_RADIUS 15 // Radius for collision checking
 #define PLAYER_SIZE    7 // Actual size of the triangle
 #define PLAYER_SHOOT_DELAY 0.15
-#define PLAYER_HEALTH 3
+#define PLAYER_HEALTH 5
+#define PLAYER_HEALTH_MAX 10
 #define PLAYER_INVUL_SEC 0.5 // Time between hits
 #define PLAYER_KNOCKBACK 100 // Knockback from getting hit
 
@@ -66,7 +67,7 @@
 // Enemy Base
 #define BASE_RADIUS 35
 #define BASE_SIDES 8
-#define BASE_HEALTH 20
+#define BASE_HEALTH 15
 #define BASE_SHOOT_DELAY 2.0 // in seconds
 
 // Object types
@@ -91,6 +92,7 @@
 #define NO_ASTEROID_RADIUS 130 // Radius around the player where asteroids can't spawn
 #define NO_LIFETIME -1
 #define STAR_FACTOR 5000 // Chance to get stars (1/STAR_FACTOR)
+#define FONT_SIZE 20
 
 // First element of list of all objects
 Node* objs_head = NULL;
@@ -100,6 +102,7 @@ clock_t lastShoot;
 clock_t lastHit;
 
 int level = 0;
+int highscore = 0;
 
 Camera2D camera;
 
@@ -182,7 +185,7 @@ void OneTimeInit() {
 
 	camera = (Camera2D){
 		.offset = (Vector2){WIDTH/2, HEIGHT/2},
-		.target = (Vector2){0, 0},
+		.target = (Vector2){WIDTH/2, HEIGHT/2},
 		.rotation = 0,
 		.zoom = 1,
 	};
@@ -215,7 +218,7 @@ void InitPlayer() {
 	player->type = TYPE_PLAYER;
 
 	// Health
-	player->maxHealth = PLAYER_HEALTH;
+	player->maxHealth = PLAYER_HEALTH_MAX;
 	player->health = PLAYER_HEALTH;
 
 	// Layer
@@ -419,6 +422,13 @@ bool CheckCollision(Object* this, Object* other) {
 }
 
 void Process() {
+	// - Main Menu -
+	if (!player) {
+		if (IsKeyPressed(KEY_P)) Initialize();
+		return;
+	}
+
+	// - Game -
 	float deltaTime = GetFrameTime();
 	clock_t currClock = clock();
 
@@ -526,9 +536,9 @@ void Process() {
 			} else if (obj->type == TYPE_PLAYER) {
 				// If it's the player, lose
 				puts("Lost! :(");
+				if (level > highscore) highscore = level;
 				level = 0;
 				FreeObjects();
-				Initialize();
 				return;
 			}
 
@@ -555,6 +565,7 @@ void Process() {
 
 	// Going to next level when there are no more enemy bases
 	if (!won) return;
+	if (player->health < player->maxHealth) ++player->health;
 	++level;
 	Initialize();
 }
@@ -566,7 +577,44 @@ void Draw() {
 	BeginMode2D(camera);
 	DrawTexture(starsTex, 0, 0, LIGHTGRAY);
 	EndMode2D();
+
+	// - Main Menu -
+	if (!player) {
+		// Highscore text
+		int length = snprintf(NULL, 0, "HIGHSCORE: %d", highscore)+1; // +1 for null terminator
+		char* highscoreText = malloc(length * sizeof(char));
+		snprintf(highscoreText, length, "HIGHSCORE: %d", highscore);
+		DrawText(highscoreText, 0, 0, FONT_SIZE, WHITE);
+		free(highscoreText);
+
+		// Play text
+		const char* play = "PRESS P TO PLAY";
+		int width = MeasureText(play, FONT_SIZE);
+		DrawText(play, (WIDTH-width)/2, HEIGHT/2, FONT_SIZE, WHITE);
+
+		// Controls text
+		DrawText("WASD - MOVE", 0, HEIGHT-2*FONT_SIZE, FONT_SIZE, WHITE);
+		DrawText("SPACE [HOLD] - SHOOT", 0, HEIGHT-FONT_SIZE, FONT_SIZE, WHITE);
+
+		EndDrawing();
+		return;
+	}
 	
+	// - Game -
+	// Level text
+	int length = snprintf(NULL, 0, "LEVEL: %d", level)+1; // +1 for null terminator
+	char* levelText = malloc(length * sizeof(char));
+	snprintf(levelText, length, "LEVEL: %d", level);
+	DrawText(levelText, 0, 0, FONT_SIZE, WHITE);
+	free(levelText);
+
+	// Health text
+	length = snprintf(NULL, 0, "HEALTH: %d", player->health)+1; // +1 for null terminator
+	char* healthText = malloc(length * sizeof(char));
+	snprintf(healthText, length, "HEALTH: %d", player->health);
+	DrawText(healthText, 0, HEIGHT-FONT_SIZE, FONT_SIZE, WHITE);
+	free(healthText);
+
 	BeginMode2D(camera);
 	int baseCount = 0;
 	Node* node = objs_head;
@@ -616,7 +664,6 @@ void MainLoop() {
 
 int main() {
 	OneTimeInit();
-	Initialize();
 
 #ifndef PLATFORM_WEB
 	SetTargetFPS(FPS);
