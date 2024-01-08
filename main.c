@@ -84,6 +84,7 @@
 
 #define NO_ASTEROID_RADIUS 130 // Radius around the player where asteroids can't spawn
 #define NO_LIFETIME -1
+#define STAR_FACTOR 5000 // Chance to get stars (1/STAR_FACTOR)
 
 // First element of list of all objects
 Node* objs_head = NULL;
@@ -98,9 +99,36 @@ Camera2D camera;
 
 Vector2* basesPos = NULL; // Positions of the bases
 
+Texture2D starsTex;
+
 void OnInterrupt(int signal) {
 	puts("\nProgram terminated by SIGINT. Exiting.");
 	exit(EXIT_SUCCESS);
+}
+
+// Reimplementing GenImageWhiteNoise to have ratio smaller than 0.01f
+void GenerateStars() {
+	// Generating image
+	Color* pixels = malloc(AREA_W * AREA_H * sizeof(Color));
+	
+	for (int i = 0; i < AREA_W*AREA_H; ++i) {
+		if (GetRandomValue(1, STAR_FACTOR) > 1) pixels[i] = BLACK;
+		else pixels[i] = WHITE;
+	}
+
+	Image starImg = {
+		.data = pixels,
+		.width  = AREA_W,
+		.height = AREA_H,
+		.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
+		.mipmaps = 1,
+	};
+
+	// Getting texture
+	starsTex = LoadTextureFromImage(starImg);
+
+	// Freeing image
+	free(pixels);
 }
 
 void FreeObjects() {
@@ -119,16 +147,27 @@ void FreeBasesPos() {
 	if (basesPos) free(basesPos);
 }
 
+void FreeStarsTex() {
+	UnloadTexture(starsTex);
+}
+
 void OneTimeInit() {
 	signal(SIGINT, OnInterrupt);
 
+	// Window stuff
 	SetTraceLogLevel(LOG_WARNING); /* getting rid of annoying init info */
 	InitWindow(WIDTH, HEIGHT, "asteroids :3");
 	atexit(CloseWindow);
 
+	// Generating stars texture
+	GenerateStars();
+	atexit(FreeStarsTex);
+
+	// Other frees
 	atexit(FreeObjects);
 	atexit(FreeBasesPos);
 
+	// Variables
 	lastShoot = clock();
 	lastHit   = clock();
 
@@ -145,7 +184,7 @@ void InitPlayer() {
 	player = malloc(sizeof(Object));
 
 	// Position and rotation
-	player->pos = (Vector2){WIDTH/2, HEIGHT/2};
+	player->pos = (Vector2){AREA_W/2, AREA_H/2};
 	player->rot = 0;
 
 	// Vertices
@@ -399,6 +438,12 @@ void Process() {
 		obj->rot += obj->spin * deltaTime;
 		obj->pos = Vector2Add(obj->pos, Vector2Scale(obj->vel, deltaTime));
 
+		// Wrapping
+		if (obj->pos.x - obj->radius > AREA_W) obj->pos.x -= AREA_W + obj->radius*2;
+		if (obj->pos.x + obj->radius < 0)      obj->pos.x += AREA_W + obj->radius*2;
+		if (obj->pos.y - obj->radius > AREA_H) obj->pos.y -= AREA_H + obj->radius*2;
+		if (obj->pos.y + obj->radius < 0)      obj->pos.y += AREA_H + obj->radius*2;
+
 		// Getting transformed vertices
 		for (int i = 0; i < obj->vertCount; ++i) {
 			obj->transVerts[i] = Vector2Add(obj->pos, Vector2Rotate(obj->vertices[i], obj->rot));
@@ -418,7 +463,6 @@ void Process() {
 
 			if (!(otherObj->layer & obj->layerMask)) continue; // Other object is not in the layer mask
 			if (Vector2Distance(obj->pos, otherObj->pos) > obj->radius + otherObj->radius) continue; // Other object is not in range
-			if (obj->type == TYPE_PROJECTILE && otherObj->type == TYPE_BASE) printf("%f - %d\n", Vector2Distance(obj->pos, otherObj->pos), obj->radius + otherObj->radius);
 			if (!CheckCollision(obj, otherObj)) continue; // The objects don't collide
 
 			if (obj->type == TYPE_PLAYER && (otherObj->type == TYPE_ASTEROID || otherObj->type == TYPE_BASE)) {
@@ -470,7 +514,10 @@ void Process() {
 	}
 
 	// Move camera
-	camera.target = player->pos;
+	Vector2 newTarget;
+	newTarget.x = Clamp(player->pos.x, WIDTH /2, AREA_W-(WIDTH /2));
+	newTarget.y = Clamp(player->pos.y, HEIGHT/2, AREA_H-(HEIGHT/2));
+	camera.target = newTarget;
 
 	// Going to next level when there are no more enemy bases
 	if (!won) return;
@@ -483,12 +530,15 @@ void Draw() {
 	ClearBackground(BLACK);
 	BeginMode2D(camera);
 
-	int baseCount = 0;
+	// Drawing stars
+	DrawTexture(starsTex, 0, 0, LIGHTGRAY);
 
 	// Drawing objects and storing base positions
+	int baseCount = 0;
 	Node* node = objs_head;
 	while (node != NULL) {
 		if (node->obj->type == TYPE_BASE) basesPos[baseCount++] = node->obj->pos; // Storing base pos
+
 		DrawObject(*(node->obj));
 		node = node->next;
 	}
